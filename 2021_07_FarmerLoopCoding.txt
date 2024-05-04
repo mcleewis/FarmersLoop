@@ -1,0 +1,144 @@
+
+##2021-07-20###
+#FOLDER: OneDrive/Manuscripts/2017_FarmersLoop2/2021_16S_analys/
+
+
+#be sure to have downloaded 4 things: mothur (for mac 1.31.2), RDP training set (mothur-formatted version of the RDP training set), Lookup data for use with shhh.flows (FLX Titanium), and SILVA-based bacterial reference alignment.
+#put all of these downloads along with your ".oligos" file and your ".sff" file into a folder.
+#open mothur through the terminal using the command (./mothur)
+
+#will need to merge files, but can't merge the .sff files due to overlap in the bar code sequence of some samples... will run through 
+#H6IVLHQ01.sff	Crude.oligos
+#H6IVLHQ02.sff	Diesel.oligos
+
+
+#".sff" file is the original flow data from the sequencer.  "sffinfo" will extract the fasta, qual, and flow data from the binary file#
+sffinfo(sff=H6IVLHQ01.sff, flow=T) #CrudeOil
+sffinfo(sff=H6IVLHQ02.sff, flow=T) #Diesel
+
+summary.seqs(fasta=H6IVLHQ01.fasta)
+summary.seqs(fasta=H6IVLHQ02.fasta)
+# H6IVLHQ01= 435502 sequences; H6IVLHQ02=431521 sequences; total# seqs = 867023##
+
+#"trim.flows" will separate each flowgram according to the barcode and primer combination, and make sure that sequences are within a min/max length.  You need to make a ".oligos" file to run this command#
+trim.flows(flow=H6IVLHQ01.flow, oligos=Crude.oligos, pdiffs=0, bdiffs=0, processors=8)
+trim.flows(flow=H6IVLHQ02.flow, oligos=Diesel.oligos, pdiffs=0, bdiffs=0, processors=8)
+
+#"shhh.flows" will de-noise the sequence data.  
+shhh.flows(file=H6IVLHQ01.flow.files, processors=8)
+shhh.flows(file=H6IVLHQ02.flow.files, processors=8)
+
+#"trim.seqs" will remove the barcode and primer sequences, make sure everything is at least 200 bp long, remove sequences with homopolymers longer than 8bp, and get the reverse complement for each sequences.  It will also create a new names file which maps the names of redundant sequences to a unique sequence and it will create a group file that indicates what group/sample each sequence came from#
+trim.seqs(fasta=H6IVLHQ01.shhh.fasta, name=H6IVLHQ01.shhh.names, oligos=Crude.oligos, pdiffs=0, bdiffs=0, maxhomop=8, minlength=200, processors=8)
+trim.seqs(fasta=H6IVLHQ02.shhh.fasta, name=H6IVLHQ02.shhh.names, oligos=Diesel.oligos, pdiffs=0, bdiffs=0, maxhomop=8, minlength=200, processors=8)
+
+
+#summary.seqs is a command to get a look at your data set and understand what is going on within it#
+summary.seqs(fasta=H6IVLHQ01.shhh.trim.fasta, name=H6IVLHQ01.shhh.trim.names)
+summary.seqs(fasta=H6IVLHQ02.shhh.trim.fasta, name=H6IVLHQ02.shhh.trim.names)
+
+
+###Need to merge the files AFTER the last oligos file is used, due to the overlap of barcodes...#
+merge.files(input=H6IVLHQ01.flow.files-H6IVLHQ02.flow.files, output=farmersloop.flow.files)
+merge.files(input=H6IVLHQ01.shhh.trim.names-H6IVLHQ02.shhh.trim.names, output=farmersloop.shhh.trim.names)
+merge.files(input=H6IVLHQ01.shhh.trim.fasta-H6IVLHQ02.shhh.trim.fasta, output=farmersloop.shhh.trim.fasta)
+merge.files(input=H6IVLHQ01.shhh.groups-H6IVLHQ02.shhh.groups, output=farmersloop.shhh.groups)
+
+summary.seqs(fasta=farmersloop.shhh.trim.fasta, name=farmersloop.shhh.trim.names, processors=8)
+
+
+#unique.seqs will make is so we are ONLY working with the unique sequences (saving processing speed)##
+unique.seqs(fasta=farmersloop.shhh.trim.fasta, name=farmersloop.shhh.trim.names)
+
+summary.seqs(fasta=farmersloop.shhh.trim.unique.fasta, name=farmersloop.shhh.trim.unique.names)
+
+#align.seqs will generate an alignment of the data using the SILVA database#
+align.seqs(fasta=farmersloop.shhh.trim.unique.fasta, reference=silva.bacteria.fasta, flip=t, processors=8)
+#included "flip=t" because the first time I ran the align.seqs, mothur warned me that a large number of sequences were excluded.##
+
+#use this screen.seqs command to determine the start and end the next command (summary.seqs)#
+summary.seqs(fasta=farmersloop.shhh.trim.unique.align, name=farmersloop.shhh.trim.unique.names)
+
+#start 15647, end will be optimized based on screen.seqs#
+screen.seqs(fasta=farmersloop.shhh.trim.unique.align, name=farmersloop.shhh.trim.unique.names, group=farmersloop.shhh.groups, start=15647, optimize=end, criteria=95, processors=8)
+
+#filter.seqs will filter the alignment so that all of the sequences only overlap in the same region.  This will also remove any columns in the alignment that don't contain data (vertical=T)##
+filter.seqs(fasta=farmersloop.shhh.trim.unique.good.align, vertical=T, trump=., processors=8)
+
+#run unique.seqs again to reduce the amount of data which are analyzed again (i.e. increase processing power)#
+unique.seqs(fasta=farmersloop.shhh.trim.unique.good.filter.fasta, name=farmersloop.shhh.trim.unique.good.names)
+
+#final step in reducing sequence error - merge sequence counts that are within 2 bp of a more abundant sequence (difference of 1bp per 100 bp of sequence length).#
+pre.cluster(fasta=farmersloop.shhh.trim.unique.good.filter.unique.fasta, name=farmersloop.shhh.trim.unique.good.filter.names, group=farmersloop.shhh.good.groups, diffs=2)
+
+#use this as a "pre-chimera checking" number#
+summary.seqs(fasta=farmersloop.shhh.trim.unique.good.filter.unique.precluster.fasta, count=farmersloop.shhh.trim.unique.good.filter.unique.precluster.count_table)
+
+#remove chimeras. if a sequence is chimeric in one group, then it is removed/flagged in all other groups##
+chimera.uchime(fasta=farmersloop.shhh.trim.unique.good.filter.unique.precluster.fasta, count=farmersloop.shhh.trim.unique.good.filter.unique.precluster.count_table, processors=8)
+
+
+#removes the found chimeras from all datasets#
+####NOT SURE WHY THERE'S ISSUES WHTH THIS?  THE NAMES FILE IS CAUSING AN ERROR.  USE THE CODING THAT'S ON THE WEBSITE AND IT WORKS. SEE BELOW ## ###remove.seqs(accnos=farmersloop.shhh.trim.unique.good.filter.unique.precluster.uchime.accnos, fasta=farmersloop.shhh.trim.unique.good.filter.unique.precluster.fasta, name=farmersloop.shhh.trim.unique.good.filter.unique.precluster.names, group=farmersloop.shhh.good.groups, dups=T)###
+
+remove.seqs(accnos=farmersloop.shhh.trim.unique.good.filter.unique.precluster.denovo.uchime.accnos, fasta=farmersloop.shhh.trim.unique.good.filter.unique.precluster.fasta, count=farmersloop.shhh.trim.unique.good.filter.unique.precluster.count_table, dups=T)
+	#REMOVED 2493 FROM FASTA AND 24551 FROM COUNT FILE ##
+
+summary.seqs(name=current) #THIS ALSO DOESN'T WORK, THE NAMES FILE IS OFF? NOT SURE WHY?#
+
+#classify.seqs will classify our sequences#
+	####classify.seqs(fasta=farmersloop.shhh.trim.unique.good.filter.unique.precluster.pick.fasta, name=farmersloop.shhh.trim.unique.good.filter.unique.precluster.pick.names, group=farmersloop.shhh.good.pick.groups, template=trainset9_032012.pds.fasta, taxonomy=trainset9_032012.pds.tax, cutoff=50, processors=8)###
+
+classify.seqs(fasta=farmersloop.shhh.trim.unique.good.filter.unique.precluster.pick.fasta, count=farmersloop.shhh.trim.unique.good.filter.unique.precluster.pick.count_table, template=trainset9_032012.pds.fasta, taxonomy=trainset9_032012.pds.tax, cutoff=50, processors=8)
+
+
+## update the RDP file? (name final_rdp18)
+classify.seqs(fasta=farmersloop.shhh.trim.unique.good.filter.unique.precluster.pick.fasta, count=farmersloop.shhh.trim.unique.good.filter.unique.precluster.pick.count_table, template=trainset18_062020.rdp.fasta, taxonomy=trainset18_062020.rdp.tax, cutoff=50, processors=8)
+
+
+
+remove.lineage(fasta=farmersloop.shhh.trim.unique.good.filter.unique.precluster.pick.fasta, count=farmersloop.shhh.trim.unique.good.filter.unique.precluster.pick.count_table, taxonomy=farmersloop.shhh.trim.unique.good.filter.unique.precluster.pick.pds.wang.taxonomy, taxon=Mitochondria-Chloroplast-Archaea-Eukaryota-unknown)
+
+
+summary.seqs(fasta=farmersloop.shhh.trim.unique.good.filter.unique.precluster.pick.pick.fasta, count=farmersloop.shhh.trim.unique.good.filter.unique.precluster.pick.pick.count_table)
+ 
+
+system(cp farmersloop.shhh.trim.unique.good.filter.unique.precluster.pick.pick.fasta final.fasta)
+system(cp farmersloop.shhh.trim.unique.good.filter.unique.precluster.pick.pick.names final.names)
+system(cp farmersloop.shhh.good.pick.pick.groups final.groups)
+system(cp farmersloop.shhh.trim.unique.good.filter.unique.precluster.pick.pds.wang.pick.taxonomy final.taxonomy)
+
+
+rename.file()
+rename.file(fasta=current, name=current, group=current, taxonomy=current, count = current, prefix=final_rdp18)
+rename.file(count=current, prefix=final21)
+
+dist.seqs(fasta=final_rdp18.fasta, cutoff=0.15, processors=8)
+cluster(column=final_rdp18.dist, count=final_rdp18.count_table, processors=8)
+
+
+
+
+make.shared(list=final_rdp18.opti_mcc.list, count=final_rdp18.count_table, label=0.03)
+
+count.groups()
+sub.sample(shared=final_rdp18.opti_mcc.shared, size=3537)
+classify.otu(list=final_rdp18.opti_mcc.list, count=final_rdp18.count_table, taxonomy=final_rdp18.taxonomy, label=0.03)
+
+
+
+
+##taxonomy is in: final21.opti_mcc.0.03.cons.taxonomy
+## OTU count table is in: final21.opti_mcc.0.03.subsample.shared
+### these data are at 3% and have been subsampled to the smallest # sequences in a sample 3537. 
+
+
+#want a database file because get the representative sequences?
+
+
+get.oturep(list=final21.opti_mcc.list, fasta=final21.fasta, column=final21.dist, name=final21.names) 
+classify.otu(list=final21.opti_mcc.list, name=final21.names, taxonomy=final21.taxonomy, label=0.03)
+
+create.database(shared=final21.opti_mcc.shared, label=0.03, repfasta=final21.opti_mcc.0.03.rep.fasta, repname=final21.opti_mcc.0.03.rep.names, constaxonomy=final21.opti_mcc.0.03.cons.taxonomy)
+
+
