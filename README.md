@@ -1,5 +1,5 @@
 Coding associated with the manuscript "Long-term legacy of phytoremediation on plant succession and soil microbial communities in petroleum-contaminated sub-Arctic soils" 
-Under Review currently in (EGU-SOIL - May 2024)
+Accepted SOIL (EGUSPHERE-2023-2097)
 
 Authors: Mary-Cathrine Leewis1,2,3, Christopher Kasanke2,3,4, Ondrej Uhlik5, Mary Beth Leigh2,3
 Affiliations:
